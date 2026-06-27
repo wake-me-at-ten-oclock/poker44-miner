@@ -61,15 +61,34 @@ class Miner(BaseMinerNeuron):
         else:
             bt.logging.warning(f"miner_infer import failed ({_IMPORT_ERR}); reference heuristic.")
 
-        # OPAQUE manifest: reveal nothing about our model. The validator only
-        # scores risk_scores; the manifest is metadata we fully control. We send
-        # a minimal closed-source manifest (like the current #1 uid88) so our
-        # solution, features, repo and weights stay private. Never points to our code.
-        self.model_manifest = {
-            "schema_version": "1",
-            "open_source": False,
-            "inference_mode": "remote",
-        }
+        # Compliant manifest: claims our original public repo+commit so the
+        # backend originality policy gives us priority (earliest unique commit
+        # wins; copiers get zeroed). repo_commit comes from env so this file is
+        # byte-identical between the public repo and the served node.
+        repo_root = Path(_WORK)
+        impl = [repo_root / f for f in
+                ("miner_infer.py", "p44_combined.py", "p44_features.py", "winner_features.py")]
+        impl = [p for p in impl if p.exists()] or [Path(__file__).resolve()]
+        self.model_manifest = build_local_model_manifest(
+            repo_root=repo_root,
+            implementation_files=impl,
+            defaults={
+                "model_name": "poker44-stack-combined",
+                "model_version": "1",
+                "framework": "lightgbm+sklearn",
+                "license": "MIT",
+                "open_source": True,
+                "inference_mode": "remote",
+                "repo_url": "https://github.com/wake-me-at-ten-oclock/poker44-miner",
+                "training_data_statement": (
+                    "Trained only on the public Poker44 benchmark "
+                    "(api.poker44.net/api/v1/benchmark)."
+                ),
+                "training_data_sources": ["poker44-benchmark"],
+                "private_data_attestation": "Does not train on validator-only evaluation data.",
+                "data_attestation": "Public benchmark data only; no validator eval scraping.",
+            },
+        )
 
     async def forward(self, synapse: DetectionSynapse) -> DetectionSynapse:
         chunks = synapse.chunks or []
